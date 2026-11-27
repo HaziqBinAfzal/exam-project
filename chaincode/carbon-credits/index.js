@@ -3,6 +3,50 @@
 const { Contract } = require('fabric-contract-api');
 
 class CarbonCredits extends Contract {
+    async AnchorEvidence(ctx, bundleId, evidenceSha256) {
+        if (ctx.clientIdentity.getMSPID() !== 'Org1MSP') {
+            throw new Error('Only the issuer organization can anchor evidence');
+        }
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(bundleId)) {
+            throw new Error('Invalid bundle ID');
+        }
+        if (!/^[a-f0-9]{64}$/.test(evidenceSha256)) {
+            throw new Error('Expected a lowercase SHA-256 evidence fingerprint');
+        }
+
+        const key = ctx.stub.createCompositeKey('evidence-anchor', [bundleId]);
+        const existing = await ctx.stub.getState(key);
+        if (existing.length > 0) {
+            const anchor = JSON.parse(existing.toString('utf8'));
+            if (anchor.evidenceSha256 !== evidenceSha256) {
+                throw new Error(`Bundle ${bundleId} already has a different fingerprint`);
+            }
+            return anchor;
+        }
+
+        const anchor = {
+            bundleId,
+            evidenceSha256,
+            issuerMsp: ctx.clientIdentity.getMSPID(),
+            anchorTxId: ctx.stub.getTxID(),
+        };
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(anchor)));
+        return anchor;
+    }
+
+    async ReadEvidenceAnchor(ctx, bundleId) {
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(bundleId)) {
+            throw new Error('Invalid bundle ID');
+        }
+
+        const key = ctx.stub.createCompositeKey('evidence-anchor', [bundleId]);
+        const record = await ctx.stub.getState(key);
+        if (record.length === 0) {
+            throw new Error(`Evidence anchor ${bundleId} was not found`);
+        }
+        return JSON.parse(record.toString('utf8'));
+    }
+
     async ApproveOrigin(ctx, originId, registry, registryRef, quantityText, methodology, evidenceSha256) {
         if (ctx.clientIdentity.getMSPID() !== 'Org2MSP') {
             throw new Error('Only the verifier organization can approve origins');
