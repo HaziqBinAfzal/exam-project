@@ -32,6 +32,42 @@ class CarbonCredits extends Contract {
         return credit;
     }
 
+    async TransferCredit(ctx, creditId, newOwnerMsp) {
+        const credit = await this.ReadCredit(ctx, creditId);
+        if (credit.status === 'RETIRED') {
+            throw new Error(`Credit ${creditId} is retired`);
+        }
+        if (ctx.clientIdentity.getMSPID() !== credit.ownerMsp) {
+            throw new Error('Only the current owner organization can transfer this credit');
+        }
+        if (!['Org1MSP', 'Org2MSP'].includes(newOwnerMsp) || newOwnerMsp === credit.ownerMsp) {
+            throw new Error('Recipient must be a different participating organization');
+        }
+
+        credit.ownerMsp = newOwnerMsp;
+        credit.status = 'TRANSFERRED';
+        credit.lastTransferTxId = ctx.stub.getTxID();
+        const key = ctx.stub.createCompositeKey('credit', [creditId]);
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(credit)));
+        return credit;
+    }
+
+    async RetireCredit(ctx, creditId) {
+        const credit = await this.ReadCredit(ctx, creditId);
+        if (credit.status === 'RETIRED') {
+            throw new Error(`Credit ${creditId} is already retired`);
+        }
+        if (ctx.clientIdentity.getMSPID() !== credit.ownerMsp) {
+            throw new Error('Only the current owner organization can retire this credit');
+        }
+
+        credit.status = 'RETIRED';
+        credit.retirementTxId = ctx.stub.getTxID();
+        const key = ctx.stub.createCompositeKey('credit', [creditId]);
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(credit)));
+        return credit;
+    }
+
     async ReadCredit(ctx, creditId) {
         const key = ctx.stub.createCompositeKey('credit', [creditId]);
         const record = await ctx.stub.getState(key);
