@@ -2,9 +2,12 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import sqlite3
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 
@@ -87,7 +90,10 @@ def finish_pending(db, job_id, topic, payload):
 def main():
     parser = argparse.ArgumentParser(description="Process MQTT meter readings")
     parser.add_argument("--retry-only", action="store_true")
+    parser.add_argument("--retry-interval", type=int, default=15, metavar="SECONDS")
     args = parser.parse_args()
+    if args.retry_interval <= 0:
+        parser.error("--retry-interval must be positive")
     os.umask(0o077)
     STATE.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(STATE / "processed.sqlite3", timeout=30)
@@ -120,8 +126,29 @@ def main():
 
     subscriber = subprocess.Popen(command, stdout=subprocess.PIPE)
     try:
+        messages = queue.Queue(maxsize=128)
+
+        def read_subscriber():
+            for line in subscriber.stdout:
+                messages.put(line)
+            messages.put(None)
+
+        threading.Thread(target=read_subscriber, daemon=True).start()
+        next_retry = time.monotonic() + args.retry_interval
         print("Listening for live fuel and electricity readings", flush=True)
-        for line in subscriber.stdout:
+
+        while True:
+            now = time.monotonic()
+            if now >= next_retry:
+                replay_pending(db)
+                next_retry = time.monotonic() + args.retry_interval
+
+            try:
+                line = messages.get(timeout=max(0, next_retry - time.monotonic()))
+            except queue.Empty:
+                continue
+            if line is None:
+                break
             try:
                 topic, payload = line.rstrip(b"\r\n").split(b" ", 1)
                 topic = topic.decode("ascii")
