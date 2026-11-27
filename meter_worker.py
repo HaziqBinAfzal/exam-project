@@ -56,8 +56,10 @@ def process_message(db, topic, payload):
         pending = STATE / "pending.json"
         pending.write_bytes(stored_evidence)
         try:
+            identity = json.dumps(key, separators=(",", ":")).encode("utf-8")
+            anchor_id = hashlib.sha256(identity).hexdigest()
             bundle = subprocess.check_output(
-                ["bash", str(ROOT / "issue_audit_bundle.sh"), str(pending)],
+                ["bash", str(ROOT / "fabric_evidence.sh"), "issue", anchor_id, str(pending)],
                 env={**os.environ, "TMPDIR": str(STATE)},
                 text=True,
             ).strip()
@@ -65,7 +67,7 @@ def process_message(db, topic, payload):
         finally:
             pending.unlink(missing_ok=True)
 
-    return f"ACCEPTED {reading['id']}: {bundle}"
+    return f"ACCEPTED {reading['id']}: {bundle} (Fabric anchor: {anchor_id})"
 
 
 def replay_pending(db):
