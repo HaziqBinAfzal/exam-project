@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exam Project | Carbon Disclosure</title>
+  <style>
+    :root { color-scheme: dark; font: 16px system-ui, sans-serif; }
+    body { margin: 0; background: #0d1715; color: #e8f2ed; }
+    main { width: min(920px, calc(100% - 48px)); margin: 64px auto; }
+    h1 { font-size: clamp(2rem, 6vw, 3.5rem); margin: 0 0 8px; }
+    .muted { color: #a9beb4; }
+    #status { color: #ffd28c; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 16px; }
+    article { background: #172622; border: 1px solid #31443c; border-radius: 14px; padding: 20px; }
+    strong { display: block; font-size: 2rem; margin: 8px 0 2px; }
+    section { margin-top: 32px; }
+    button { background: #b9e9cf; color: #10251b; border: 0; border-radius: 8px;
+             padding: 10px 16px; font: inherit; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Carbon Disclosure</h1>
+    <p id="period" class="muted"></p>
+    <p id="status" role="status">Loading disclosure…</p>
+    <button id="refresh" type="button">Refresh report</button>
+
+    <section id="results" hidden>
+      <div class="metrics" aria-label="Emissions totals">
+        <article>Scope 1<strong id="scope1"></strong><span class="muted">kg CO₂e</span></article>
+        <article>Scope 2<strong id="scope2"></strong><span class="muted">kg CO₂e</span></article>
+        <article>Combined<strong id="combined"></strong><span class="muted">kg CO₂e</span></article>
+      </div>
+      <section aria-labelledby="reviews-title">
+        <h2 id="reviews-title">Open reviews</h2>
+        <ul id="reviews"></ul>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const element = id => document.getElementById(id);
+
+    async function loadReport() {
+      element("refresh").disabled = true;
+      element("status").textContent = "Loading disclosure…";
+      try {
+        const response = await fetch("/api/disclosure");
+        if (!response.ok) throw new Error("Disclosure unavailable");
+        const report = await response.json();
+
+        element("period").textContent = `${report.period_start} to ${report.period_end}`;
+        element("status").textContent = `Report status: ${report.status.replaceAll("_", " ")}`;
+        element("scope1").textContent = report.scope_1_kg_co2e;
+        element("scope2").textContent = report.scope_2_kg_co2e;
+        element("combined").textContent = report.combined_scope_1_and_2_kg_co2e;
+
+        const reviews = report.open_reviews.map(review => `${review.reading_id} — ${review.reason}`);
+        element("reviews").replaceChildren(...(reviews.length ? reviews : ["No open reviews"]).map(text => {
+          const row = document.createElement("li");
+          row.textContent = text;
+          return row;
+        }));
+        element("results").hidden = false;
+      } catch {
+        element("results").hidden = true;
+        element("period").textContent = "";
+        element("status").textContent = "Could not load the disclosure. Check the server and refresh.";
+      } finally {
+        element("refresh").disabled = false;
+      }
+    }
+
+    element("refresh").addEventListener("click", loadReport);
+    loadReport();
+  </script>
+</body>
+</html>
