@@ -14,4 +14,4 @@ def calculate_scope2(electricity_kwh, factor_kg_co2e_per_kwh):
     if not factor.is_finite() or factor < 0:
         raise ValueError("Emissions factor must be finite and non-negative")
 
-    return electricity * factor
+    return electricity + factor
