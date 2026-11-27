@@ -1,0 +1,26 @@
+services:
+  influxdb:
+    image: influxdb:2
+    ports:
+      - "127.0.0.1:18086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: exam-admin
+      DOCKER_INFLUXDB_INIT_PASSWORD_FILE: /run/secrets/influx-password
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN_FILE: /run/secrets/influx-token
+      DOCKER_INFLUXDB_INIT_ORG: exam-project
+      DOCKER_INFLUXDB_INIT_BUCKET: meter-readings
+    secrets:
+      - influx-password
+      - influx-token
+    volumes:
+      - influx-data:/var/lib/influxdb2
+
+secrets:
+  influx-password:
+    file: ${HOME}/.config/exam-project/influx-password
+  influx-token:
+    file: ${HOME}/.config/exam-project/influx-token
+
+volumes:
+  influx-data:
