@@ -3,6 +3,46 @@
 const { Contract } = require('fabric-contract-api');
 
 class CarbonCredits extends Contract {
+    async ApproveOrigin(ctx, originId, registry, registryRef, quantityText, methodology, evidenceSha256) {
+        if (ctx.clientIdentity.getMSPID() !== 'Org2MSP') {
+            throw new Error('Only the verifier organization can approve origins');
+        }
+        if (!['REGISTRY-A', 'REGISTRY-B'].includes(registry) ||
+            !/^[A-Z0-9-]{1,64}$/.test(originId) ||
+            !/^[A-Z0-9-]{1,64}$/.test(registryRef)) {
+            throw new Error('Invalid registry, reference, or origin');
+        }
+
+        const quantity = Number(quantityText);
+        if (!/^[1-9][0-9]*$/.test(quantityText) || !Number.isSafeInteger(quantity)) {
+            throw new Error('Quantity must be a positive whole number');
+        }
+        if (methodology !== 'DEMO-MRV-V1') {
+            throw new Error('Unsupported verification methodology');
+        }
+        if (!/^[a-f0-9]{64}$/.test(evidenceSha256)) {
+            throw new Error('Expected a lowercase SHA-256 evidence fingerprint');
+        }
+
+        const key = ctx.stub.createCompositeKey('origin-approval', [originId]);
+        if ((await ctx.stub.getState(key)).length > 0) {
+            throw new Error(`Origin ${originId} already has an approval`);
+        }
+
+        const approval = {
+            originId,
+            registry,
+            registryRef,
+            quantityTonnesCO2e: quantity,
+            methodology,
+            evidenceSha256,
+            verifierMsp: ctx.clientIdentity.getMSPID(),
+            approvalTxId: ctx.stub.getTxID(),
+        };
+        await ctx.stub.putState(key, Buffer.from(JSON.stringify(approval)));
+        return approval;
+    }
+
     async IssueCredit(ctx, creditId, quantityText, registry, registryRef, originId) {
         if (ctx.clientIdentity.getMSPID() !== 'Org1MSP') {
             throw new Error('Only the registry organization can issue credits');
@@ -40,11 +80,24 @@ class CarbonCredits extends Contract {
             throw new Error(`Registry reference ${registry}/${registryRef} is already linked to a credit`);
         }
 
+        const approvalKey = ctx.stub.createCompositeKey('origin-approval', [originId]);
+        const approvalBytes = await ctx.stub.getState(approvalKey);
+        if (approvalBytes.length === 0) {
+            throw new Error(`Origin ${originId} has no verifier approval`);
+        }
+
+        const approval = JSON.parse(approvalBytes.toString('utf8'));
+        if (approval.registry !== registry || approval.registryRef !== registryRef ||
+            approval.quantityTonnesCO2e !== quantity) {
+            throw new Error(`Issuance does not match the approval for ${originId}`);
+        }
+
         const credit = {
             creditId,
             registry,
             registryRef,
             originId,
+            verification: approval,
             quantityTonnesCO2e: quantity,
             ownerMsp: ctx.clientIdentity.getMSPID(),
             status: 'ISSUED',
