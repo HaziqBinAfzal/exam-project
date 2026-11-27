@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 from statistics import median
 
+from check_esg_claim import reporting_period
 from scope3_freight import nonnegative_number
 
 
@@ -13,6 +14,19 @@ def flag_meter_anomaly(evidence, history):
     field, unit = {1: ("litres", "L"), 2: ("kwh", "kWh")}[scope]
     reading = evidence["reading"]
     observed = nonnegative_number(reading[field])
+
+    start, end = reporting_period(evidence)
+    period_seconds = (end - start).total_seconds()
+    if period_seconds != 86_400:
+        return {
+            "status": "incomparable_period",
+            "review_required": True,
+            "observed": str(observed),
+            "unit": unit,
+            "period_seconds": period_seconds,
+            "baseline_period_seconds": 86_400,
+        }
+
     baseline = history["meters"].get(reading["meter_id"])
 
     if baseline is None or baseline["scope"] != scope or baseline["unit"] != unit:
