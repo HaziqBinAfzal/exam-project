@@ -1,4 +1,5 @@
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -177,4 +178,12 @@ def main():
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    os.umask(0o077)
+    STATE.mkdir(parents=True, exist_ok=True)
+    with (STATE / "worker.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("Another meter worker is already running.", file=sys.stderr)
+            raise SystemExit(1)
+        raise SystemExit(main())
