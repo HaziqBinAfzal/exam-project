@@ -3,12 +3,20 @@
 const { Contract } = require('fabric-contract-api');
 
 class CarbonCredits extends Contract {
-    async IssueCredit(ctx, creditId, quantityText) {
+    async IssueCredit(ctx, creditId, quantityText, registry, registryRef, originId) {
         if (ctx.clientIdentity.getMSPID() !== 'Org1MSP') {
             throw new Error('Only the registry organization can issue credits');
         }
         if (!/^CC-[A-Z0-9-]{1,40}$/.test(creditId)) {
             throw new Error('Invalid credit ID');
+        }
+
+        if (!['REGISTRY-A', 'REGISTRY-B'].includes(registry)) {
+            throw new Error('Registry is outside the demo allowlist');
+        }
+        if (!/^[A-Z0-9-]{1,64}$/.test(registryRef) ||
+            !/^[A-Z0-9-]{1,64}$/.test(originId)) {
+            throw new Error('Registry reference and origin ID must use the normalized format');
         }
 
         const quantity = Number(quantityText);
@@ -22,13 +30,28 @@ class CarbonCredits extends Contract {
             throw new Error(`Credit ${creditId} already exists`);
         }
 
+        const originKey = ctx.stub.createCompositeKey('origin', [originId]);
+        if ((await ctx.stub.getState(originKey)).length > 0) {
+            throw new Error(`Origin ${originId} is already linked to a credit`);
+        }
+
+        const registryKey = ctx.stub.createCompositeKey('registry-ref', [registry, registryRef]);
+        if ((await ctx.stub.getState(registryKey)).length > 0) {
+            throw new Error(`Registry reference ${registry}/${registryRef} is already linked to a credit`);
+        }
+
         const credit = {
             creditId,
+            registry,
+            registryRef,
+            originId,
             quantityTonnesCO2e: quantity,
             ownerMsp: ctx.clientIdentity.getMSPID(),
             status: 'ISSUED',
         };
         await ctx.stub.putState(key, Buffer.from(JSON.stringify(credit)));
+        await ctx.stub.putState(originKey, Buffer.from(creditId));
+        await ctx.stub.putState(registryKey, Buffer.from(creditId));
         return credit;
     }
 
