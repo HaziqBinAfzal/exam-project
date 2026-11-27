@@ -3,6 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from assess_supplier_csv import assess_csv
 from check_esg_claim import reporting_period
 from check_signed_claim import load_verified_evidence
 from scope3_freight import nonnegative_number
@@ -49,16 +50,47 @@ def build_draft(fuel, electricity):
     }
 
 
+def add_supplemental_disclosures(draft, freight_csv, credit_export):
+    if freight_csv is not None:
+        freight = assess_csv(freight_csv)
+        draft["scope_3_freight"] = {
+            "status": "illustrative_estimates_without_reporting_dates",
+            "input_file": freight["input_file"],
+            "declarations": freight["review"],
+        }
+
+    if credit_export is not None:
+        credit = json.loads(credit_export.read_text(encoding="utf-8"))
+        if credit["status"] != "RETIRED" or not credit.get("retirementTxId"):
+            raise ValueError("Credit export must contain a retired credit and its transaction ID")
+        quantity = credit["quantityTonnesCO2e"]
+        if type(quantity) is not int or quantity <= 0:
+            raise ValueError("Retired credit quantity must be a positive whole number")
+
+        draft["retired_credit"] = {
+            "source": "supplied Fabric ledger export",
+            "credit_id": credit["creditId"],
+            "quantity_tonnes_co2e": quantity,
+            "retirement_transaction_id": credit["retirementTxId"],
+        }
+
+    return draft
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a draft from signed meter evidence")
     parser.add_argument("fuel_bundle", type=Path)
     parser.add_argument("electricity_bundle", type=Path)
     parser.add_argument("trusted_public_key", type=Path)
+    parser.add_argument("--freight-csv", type=Path)
+    parser.add_argument("--retired-credit", type=Path)
     args = parser.parse_args()
 
     try:
         fuel = load_verified_evidence(args.fuel_bundle, args.trusted_public_key)
         electricity = load_verified_evidence(args.electricity_bundle, args.trusted_public_key)
-        print(json.dumps(build_draft(fuel, electricity), indent=2))
+        draft = build_draft(fuel, electricity)
+        add_supplemental_disclosures(draft, args.freight_csv, args.retired_credit)
+        print(json.dumps(draft, indent=2))
     except (OSError, subprocess.CalledProcessError, KeyError, TypeError, ValueError) as error:
         parser.exit(1, f"Disclosure draft rejected: {error}\n")
