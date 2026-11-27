@@ -1,6 +1,6 @@
-record_id,split,tonne_km,declared_kg_co2e
-TRAIN-001,train,100,11
-TRAIN-002,train,200,24
-TRAIN-003,train,300,36
-HOLDOUT-001,holdout,250,30
-SUPPLIER-001,review,500,25
+record_id,split,tonne_km,declared_kg_co2e,period_start_utc,period_end_utc
+TRAIN-001,train,100,11,,
+TRAIN-002,train,200,24,,
+TRAIN-003,train,300,36,,
+HOLDOUT-001,holdout,250,30,,
+SUPPLIER-001,review,500,25,2026-11-05T00:00:00Z,2026-11-06T00:00:00Z

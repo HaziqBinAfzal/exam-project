@@ -26,7 +26,7 @@ def render_disclosure(report):
 
     reviews = report["open_reviews"]
     lines.extend(
-        f"- Meter review required for `{item['reading_id']}` ({item['reason']})."
+        f"- Review required for `{item['reading_id']}` ({item['reason']})."
         for item in reviews
     )
     if not reviews:
@@ -43,11 +43,19 @@ def render_disclosure(report):
     ])
 
     freight = report.get("scope_3_freight", {})
-    for item in freight.get("declarations", []):
+    subtotal = freight.get("reporting_period_estimate_kg_co2e")
+    if subtotal is not None:
+        lines.append(f"- Scope 3 freight estimate for this period: {subtotal} kg CO₂e.")
+    declarations = freight.get("declarations", [])
+    supplemental = freight.get("supplemental_declarations")
+    if supplemental is None:  # Older drafts put undated rows in declarations.
+        supplemental, declarations = declarations, []
+    for item in declarations + supplemental:
         review = "review required" if item["review_required"] else "within demo tolerance"
         lines.append(
-            f"- Supplemental Scope 3 freight estimate `{item['record_id']}`: "
-            f"{item['estimated_kg_co2e']} kg CO₂e ({review}, reporting dates unassigned)."
+            f"- Scope 3 freight record `{item['record_id']}`: "
+            f"{item['estimated_kg_co2e']} kg CO₂e "
+            f"({review}, {'in reporting period' if item in declarations else 'supplemental'})."
         )
 
     credit = report.get("retired_credit")

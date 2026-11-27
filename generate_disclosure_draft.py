@@ -53,11 +53,34 @@ def build_draft(fuel, electricity):
 def add_supplemental_disclosures(draft, freight_csv, credit_export):
     if freight_csv is not None:
         freight = assess_csv(freight_csv)
+        period = reporting_period({"reading": {
+            "period_start_utc": draft["period_start"],
+            "period_end_utc": draft["period_end"],
+        }})
+        matched = []
+        supplemental = []
+        for item in freight["review"]:
+            if "period_start_utc" in item and reporting_period({"reading": item}) == period:
+                matched.append(item)
+                if item["review_required"]:
+                    draft["open_reviews"].append({
+                        "scope": 3,
+                        "reading_id": item["record_id"],
+                        "reason": "supplier_declaration_discrepancy",
+                    })
+            else:
+                supplemental.append(item)
+
+        subtotal = sum(nonnegative_number(item["estimated_kg_co2e"]) for item in matched)
         draft["scope_3_freight"] = {
-            "status": "illustrative_estimates_without_reporting_dates",
+            "status": "estimated_freight_only" if matched else "no_matching_freight_records",
             "input_file": freight["input_file"],
-            "declarations": freight["review"],
+            "reporting_period_estimate_kg_co2e": str(subtotal) if matched else None,
+            "declarations": matched,
+            "supplemental_declarations": supplemental,
         }
+        if draft["open_reviews"]:
+            draft["status"] = "provisional"
 
     if credit_export is not None:
         credit = json.loads(credit_export.read_text(encoding="utf-8"))

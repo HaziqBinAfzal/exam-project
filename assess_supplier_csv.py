@@ -9,6 +9,7 @@ from scope3_freight import assess_declaration, train_freight_model
 def assess_csv(path):
     groups = {"train": [], "holdout": [], "review": []}
     seen_ids = set()
+    periods = {}
     required = {"record_id", "split", "tonne_km", "declared_kg_co2e"}
 
     with path.open(encoding="utf-8-sig", newline="") as file:
@@ -25,6 +26,13 @@ def assess_csv(path):
                 raise ValueError(f"Line {rows.line_num}: split must be train, holdout, or review")
 
             seen_ids.add(record_id)
+            start = (row.get("period_start_utc") or "").strip()
+            end = (row.get("period_end_utc") or "").strip()
+            if bool(start) != bool(end):
+                raise ValueError(f"Line {rows.line_num}: provide both reporting dates")
+            periods[record_id] = (
+                {"period_start_utc": start, "period_end_utc": end} if start else {}
+            )
             groups[split].append((record_id, row["tonne_km"], row["declared_kg_co2e"]))
 
     if any(not records for records in groups.values()):
@@ -40,7 +48,7 @@ def assess_csv(path):
     for split in ("holdout", "review"):
         report[split] = [
             {"record_id": record_id, "tonne_km": activity,
-             **assess_declaration(rate, activity, declared)}
+             **periods[record_id], **assess_declaration(rate, activity, declared)}
             for record_id, activity, declared in groups[split]
         ]
     return report
