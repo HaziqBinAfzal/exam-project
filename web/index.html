@@ -26,6 +26,7 @@
     <p id="status" role="status">Loading disclosure…</p>
     <button id="refresh" type="button">Refresh report</button>
     <button id="generate" type="button">Generate demo disclosure</button>
+    <a id="download" class="muted" href="/api/disclosure/download" hidden>Download signed disclosure</a>
 
     <section id="results" hidden>
       <div class="metrics" aria-label="Emissions totals">
@@ -80,6 +81,7 @@
           return row;
         }));
         element("results").hidden = false;
+        if (generate) element("download").hidden = false;
       } catch (error) {
         if (!generate) {
           element("results").hidden = true;

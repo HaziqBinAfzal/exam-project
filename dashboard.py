@@ -1,5 +1,7 @@
 import argparse
+import io
 import json
+import zipfile
 import re
 import subprocess
 from threading import Lock
@@ -11,12 +13,15 @@ def serve_dashboard(report_path):
     root = Path(__file__).resolve().parent
     page = root / "web" / "index.html"
     latest_report_path = report_path
+    latest_bundle_path = None
     generation_lock = Lock()
 
     class DashboardHandler(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path.startswith("/api/credits/"):
                 self.lookup_credit(self.path.removeprefix("/api/credits/"))
+            elif self.path == "/api/disclosure/download":
+                self.download_disclosure()
             elif self.path == "/":
                 self.respond(200, "text/html; charset=utf-8", page.read_bytes())
             elif self.path == "/api/disclosure":
@@ -71,8 +76,37 @@ exec peer chaincode query -C carboncredits -n carboncredits -c "$1"
 
             self.respond(200, content_type, json.dumps(credit).encode("utf-8"))
 
+        def download_disclosure(self):
+            if self.headers.get("Host") != "127.0.0.1:18088":
+                self.send_error(403)
+                return
+
+            bundle = latest_bundle_path
+            if bundle is None:
+                self.send_error(404, "Generate a demo disclosure first")
+                return
+
+            archive = io.BytesIO()
+            try:
+                with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as package:
+                    for name, source in (
+                        ("disclosure.md", "evidence.json"),
+                        ("disclosure.sha256", "evidence.sha256"),
+                        ("disclosure.sig", "evidence.sig"),
+                    ):
+                        package.writestr(name, (bundle / source).read_bytes())
+            except OSError as error:
+                self.log_error("Signed disclosure download failed: %s", error)
+                self.send_error(503, "Signed disclosure is unavailable")
+                return
+
+            self.respond(
+                200, "application/zip", archive.getvalue(),
+                download_name="signed-disclosure.zip",
+            )
+
         def do_POST(self):
-            nonlocal latest_report_path
+            nonlocal latest_report_path, latest_bundle_path
             if self.path != "/api/disclosure/generate-demo":
                 self.send_error(404)
                 return
@@ -102,7 +136,15 @@ exec peer chaincode query -C carboncredits -n carboncredits -c "$1"
                     raise ValueError("Demo did not report a completed output")
                 candidate = Path(outputs[0]) / "disclosure.json"
                 report = json.loads(candidate.read_text(encoding="utf-8"))
+                bundles = [
+                    line.removeprefix("Signed report bundle: ")
+                    for line in completed.stdout.splitlines()
+                    if line.startswith("Signed report bundle: ")
+                ]
+                if len(bundles) != 1:
+                    raise ValueError("Demo did not report a signed bundle")
                 latest_report_path = candidate
+                latest_bundle_path = Path(bundles[0])
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 self.log_error("Demo generation failed: %s", error)
                 self.respond(
@@ -115,11 +157,13 @@ exec peer chaincode query -C carboncredits -n carboncredits -c "$1"
 
             self.respond(200, "application/json", json.dumps(report).encode("utf-8"))
 
-        def respond(self, status, content_type, body):
+        def respond(self, status, content_type, body, download_name=None):
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            if download_name:
+                self.send_header("Content-Disposition", f'attachment; filename="{download_name}"')
             self.end_headers()
             self.wfile.write(body)
 
