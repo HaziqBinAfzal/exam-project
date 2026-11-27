@@ -38,6 +38,16 @@
         <ul id="reviews"></ul>
       </section>
     </section>
+    <section aria-labelledby="credit-title">
+      <h2 id="credit-title">Carbon Credits</h2>
+      <form id="credit-form">
+        <label for="credit-id">Fabric credit ID</label>
+        <input id="credit-id" value="CC-001" required maxlength="43">
+        <button id="lookup" type="submit">Look up credit</button>
+      </form>
+      <p id="credit-status" role="status"></p>
+      <dl id="credit-details"></dl>
+    </section>
   </main>
 
   <script>
@@ -81,6 +91,41 @@
         element("generate").disabled = false;
       }
     }
+
+    element("credit-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      element("lookup").disabled = true;
+      element("credit-status").textContent = "Querying Fabric…";
+      element("credit-details").replaceChildren();
+      try {
+        const id = element("credit-id").value.trim().toUpperCase();
+        const response = await fetch(`/api/credits/${encodeURIComponent(id)}`);
+        const credit = await response.json();
+        if (!response.ok) throw new Error(credit.error || "Credit lookup failed");
+
+        const fields = [
+          ["Credit", credit.creditId],
+          ["Status", credit.status],
+          ["Owner organization", credit.ownerMsp],
+          ["Quantity", `${credit.quantityTonnesCO2e} tonnes CO₂e`],
+          ["Retirement transaction", credit.retirementTxId]
+        ];
+        for (const [label, value] of fields) {
+          if (!value) continue;
+          const term = document.createElement("dt");
+          const detail = document.createElement("dd");
+          term.textContent = label;
+          detail.textContent = value;
+          detail.style.overflowWrap = "anywhere";
+          element("credit-details").append(term, detail);
+        }
+        element("credit-status").textContent = "Credit retrieved from Fabric.";
+      } catch (error) {
+        element("credit-status").textContent = error.message;
+      } finally {
+        element("lookup").disabled = false;
+      }
+    });
 
     element("refresh").addEventListener("click", () => loadReport());
     element("generate").addEventListener("click", () => loadReport(true));
