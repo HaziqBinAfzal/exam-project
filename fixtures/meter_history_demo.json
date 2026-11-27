@@ -1,0 +1,7 @@
+{
+  "source": "synthetic history for comparable 24-hour reading periods",
+  "meters": {
+    "METER-001": {"scope": 2, "unit": "kWh", "values": ["100", "105", "110"]},
+    "GENERATOR-001": {"scope": 1, "unit": "L", "values": ["18", "20", "22"]}
+  }
+}
