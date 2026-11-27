@@ -25,6 +25,7 @@
     <p id="period" class="muted"></p>
     <p id="status" role="status">Loading disclosure…</p>
     <button id="refresh" type="button">Refresh report</button>
+    <button id="generate" type="button">Generate demo disclosure</button>
 
     <section id="results" hidden>
       <div class="metrics" aria-label="Emissions totals">
@@ -42,13 +43,19 @@
   <script>
     const element = id => document.getElementById(id);
 
-    async function loadReport() {
+    async function loadReport(generate = false) {
       element("refresh").disabled = true;
-      element("status").textContent = "Loading disclosure…";
+      element("generate").disabled = true;
+      element("status").textContent = generate ? "Running the backend demo…" : "Loading disclosure…";
       try {
-        const response = await fetch("/api/disclosure");
-        if (!response.ok) throw new Error("Disclosure unavailable");
+        const response = generate
+          ? await fetch("/api/disclosure/generate-demo", {
+              method: "POST",
+              headers: { "X-Exam-Action": "generate-demo" }
+            })
+          : await fetch("/api/disclosure");
         const report = await response.json();
+        if (!response.ok) throw new Error(report.error || "Disclosure unavailable");
 
         element("period").textContent = `${report.period_start} to ${report.period_end}`;
         element("status").textContent = `Report status: ${report.status.replaceAll("_", " ")}`;
@@ -63,16 +70,20 @@
           return row;
         }));
         element("results").hidden = false;
-      } catch {
-        element("results").hidden = true;
-        element("period").textContent = "";
-        element("status").textContent = "Could not load the disclosure. Check the server and refresh.";
+      } catch (error) {
+        if (!generate) {
+          element("results").hidden = true;
+          element("period").textContent = "";
+        }
+        element("status").textContent = error.message;
       } finally {
         element("refresh").disabled = false;
+        element("generate").disabled = false;
       }
     }
 
-    element("refresh").addEventListener("click", loadReport);
+    element("refresh").addEventListener("click", () => loadReport());
+    element("generate").addEventListener("click", () => loadReport(true));
     loadReport();
   </script>
 </body>
