@@ -11,7 +11,12 @@ from urllib.request import Request, urlopen
 def main():
     try:
         evidence = sys.stdin.read()
-        reading = json.loads(evidence)["reading"]
+        record = json.loads(evidence)
+        measurement, field, unit = {
+            1: ("fuel_reading", "litres", "L"),
+            2: ("electricity_reading", "kwh", "kWh"),
+        }[record["scope"]]
+        reading = record["reading"]
         meter_id = reading["meter_id"]
         reading_id = reading["id"]
         for identifier in (meter_id, reading_id):
@@ -23,8 +28,8 @@ def main():
             raise ValueError("Period end must include a timezone and use whole seconds")
 
         timestamp = int(period_end.timestamp())
-        kwh = Decimal(reading["kwh"])
-        line = f"electricity_reading,meter_id={meter_id},reading_id={reading_id} kwh={kwh} {timestamp}"
+        quantity = Decimal(reading[field])
+        line = f"{measurement},meter_id={meter_id},reading_id={reading_id} {field}={quantity} {timestamp}"
 
         token_file = Path.home() / ".config/exam-project/influx-token"
         token = token_file.read_text().strip()
@@ -45,7 +50,7 @@ def main():
         print(f"InfluxDB write failed: {error}", file=sys.stderr)
         return 1
 
-    print(f"Stored {reading_id}: {kwh} kWh", file=sys.stderr)
+    print(f"Stored {reading_id}: {quantity} {unit}", file=sys.stderr)
     sys.stdout.write(evidence)
     return 0
 
