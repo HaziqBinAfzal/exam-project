@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import json
 import os
@@ -63,7 +64,30 @@ def process_message(db, topic, payload):
     return f"ACCEPTED {reading['id']}: {bundle}"
 
 
+def replay_pending(db):
+    pending = db.execute(
+        "SELECT id, topic, payload FROM pending_readings ORDER BY id"
+    ).fetchall()
+    for job_id, topic, payload in pending:
+        finish_pending(db, job_id, topic, payload)
+
+
+def finish_pending(db, job_id, topic, payload):
+    try:
+        result = process_message(db, topic, payload)
+    except (OSError, sqlite3.Error, subprocess.CalledProcessError) as error:
+        print(f"QUEUED job {job_id}: {error}", file=sys.stderr, flush=True)
+        return
+
+    with db:
+        db.execute("DELETE FROM pending_readings WHERE id = ?", (job_id,))
+    print(result, flush=True)
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Process MQTT meter readings")
+    parser.add_argument("--retry-only", action="store_true")
+    args = parser.parse_args()
     os.umask(0o077)
     STATE.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(STATE / "processed.sqlite3", timeout=30)
@@ -73,6 +97,22 @@ def main():
             PRIMARY KEY (scope, meter_id, reading_id)
         )
     """)
+
+    with db:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS pending_readings (
+                id INTEGER PRIMARY KEY,
+                topic TEXT NOT NULL,
+                payload BLOB NOT NULL
+            )
+        """)
+
+    replay_pending(db)
+    if args.retry_only:
+        remaining = db.execute("SELECT count(*) FROM pending_readings").fetchone()[0]
+        print(f"Pending readings: {remaining}")
+        db.close()
+        return int(remaining > 0)
 
     command = ["mosquitto_sub", "-h", "127.0.0.1", "-p", "18883", "-q", "1", "-v", "-R"]
     for topic in SCRIPTS:
@@ -84,7 +124,18 @@ def main():
         for line in subscriber.stdout:
             try:
                 topic, payload = line.rstrip(b"\r\n").split(b" ", 1)
-                print(process_message(db, topic.decode("ascii"), payload), flush=True)
+                topic = topic.decode("ascii")
+                evidence = run_python(SCRIPTS[topic], payload)
+                run_python(
+                    "flag_meter_anomaly.py", evidence,
+                    str(ROOT / "fixtures/meter_history_demo.json"),
+                )
+                with db:
+                    job_id = db.execute(
+                        "INSERT INTO pending_readings (topic, payload) VALUES (?, ?)",
+                        (topic, payload),
+                    ).lastrowid
+                finish_pending(db, job_id, topic, payload)
             except (ValueError, KeyError, OSError, sqlite3.Error, subprocess.CalledProcessError) as error:
                 print(f"Reading processing failed: {error}", file=sys.stderr, flush=True)
         print("MQTT subscriber stopped", file=sys.stderr)
