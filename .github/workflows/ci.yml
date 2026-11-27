@@ -47,3 +47,9 @@ jobs:
             -v "$PWD/chaincode/carbon-credits:/app:ro" -w /app \
             node@sha256:be979e5523c76fa4d5ca4ebd3099078f220aa47ec39c48ad5b5df9314debd6eb \
             npm audit --omit=dev --audit-level=high --cache /tmp/npm-cache
+
+      - name: Test Fabric contract behavior
+        working-directory: chaincode/carbon-credits
+        run: |
+          npm ci --ignore-scripts --no-audit
+          node --test index.test.js
